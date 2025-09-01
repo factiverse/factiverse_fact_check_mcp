@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "factiverse_mcp": {
+      "command": "python",
+      "args": [
+        "mcp_server.py"
+      ]
+    }
+  }
+}
