@@ -1,19 +1,10 @@
 import os
-import json
-import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
-import requests
 from dotenv import load_dotenv
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-# FastMCP is the simplest way to stand up an MCP server in Python.
-from mcp.server.fastmcp import FastMCP, Context
-
-# -------------------------------------------------------------------
-# Environment & constants
-# -------------------------------------------------------------------
 load_dotenv()
 
 
@@ -29,56 +20,54 @@ def _auth_headers() -> Dict[str, str]:
     }
 
 
-# -------------------------------------------------------------------
-# MCP server & tool
-# -------------------------------------------------------------------
-app = FastMCP("Factiverse Fact-checking MCP", instructions="Forwards the request to Factiverse credible fact-checking API /v1/fact_check and returns JSON.")
+mcp = FastMCP(
+    "Factiverse Fact-checking MCP",
+    instructions="Forwards the request to Factiverse credible fact-checking API /v1/fact_check and returns JSON.",
+    host="0.0.0.0",
+    port=80,
+)
+
 
 async def make_fact_check_request(text: str):
     async with httpx.AsyncClient() as client:
-        API_BASE = os.getenv("FACTIVERSE_API_BASE", "https://api.factiverse.ai").rstrip("/")
+        API_BASE = os.getenv("FACTIVERSE_API_BASE", "https://dev.factiverse.ai").rstrip(
+            "/"
+        )
         FACT_CHECK_ENDPOINT = f"{API_BASE}/v1/fact_check"
 
-        payload = {
-            "text": text,
-            "lang": "en"
-        }
+        payload = {"text": text, "lang": "en"}
         response = await client.post(
-                url=f"{FACT_CHECK_ENDPOINT}", timeout=30.0, json=payload, headers=_auth_headers()
+            url=f"{FACT_CHECK_ENDPOINT}",
+            timeout=30.0,
+            json=payload,
+            headers=_auth_headers(),
         )
-        # print("API response code:", response.status_code)
         response.raise_for_status()
-        # print(response.json())
         return response.json()
 
 
-@app.tool(name="fact_check")
-async def fact_check(
-    text: str
-) -> Dict[str, Any]:
+@mcp.tool(name="fact_check")
+async def fact_check(text: str) -> Dict[str, Any]:
     """
-    Forwards the request to Factiverse /v1/claim_search and returns JSON.
+    Forwards the request to Factiverse /v1/fact_check and returns JSON.
     """
     data = await make_fact_check_request(text)
+
     # Extract claim and advancedSummary from each fact_check
     fact_checks = data.get("fact_checks", [])
     summaries = []
-    labelMap = {
-        0: "REFUTES",
-        1: "SUPPORTS",
-        2: "MIXED",
-        3: "NOT_ENOUGH_INFO"
-    }
+    labelMap = {0: "REFUTES", 1: "SUPPORTS", 2: "MIXED", 3: "NOT_ENOUGH_INFO"}
     for fc in fact_checks:
         evidence = "\n".join([ev["snippet"] for ev in fc.get("evidence", [])])
-        summaries.append({
-            "claim": fc.get("claim"),
-            "predicted_label": labelMap.get(fc.get("finalPrediction"), "UNKNOWN"),
-            "evidences": evidence
-        })
+        summaries.append(
+            {
+                "claim": fc.get("claim"),
+                "predicted_label": labelMap.get(fc.get("finalPrediction"), "UNKNOWN"),
+                "evidences": evidence,
+            }
+        )
     return {"fact_check_summaries": summaries}
 
 
-
 if __name__ == "__main__":
-    app.run()
+    mcp.run(transport="streamable-http")
